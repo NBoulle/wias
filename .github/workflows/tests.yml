@@ -1,0 +1,56 @@
+name: Build wias
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+concurrency:
+  # Cancels jobs running if new commits are pushed
+  group: >
+    ${{ github.workflow }}-
+    ${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    container:
+      image: firedrakeproject/firedrake:latest
+      options: --user root
+    steps:
+    - name: Fix HOME
+      # For unknown reasons GitHub actions overwrite HOME to /github/home
+      # which will break everything unless fixed
+      # (https://github.com/actions/runner/issues/863)
+      run: echo "HOME=/home/firedrake" >> "$GITHUB_ENV"
+
+    - name: Pre-cleanup
+      run: |
+        : # Wipe everything away in the current directory
+        find . -delete
+        firedrake-clean
+
+    - uses: actions/checkout@v4
+      with:
+        # Download wias into a subdirectory not called 'wias' to make sure
+        # that the package installs correctly. Otherwise 'import wias' may
+        # work even if the installation failed because it is a subdirectory.
+        path: wias-repo
+
+    - name: Create virtual environment
+        # pass '--system-site-packages' so Firedrake can be found
+      run: python3 -m venv --system-site-packages venv-wias
+
+    - name: Install wias
+      run: |
+        . venv-wias/bin/activate
+        pip install -e './wias-repo'
+
+    - name: Run tests
+      shell: bash -l {0}
+      run: |
+        source venv-wias/bin/activate
+        python -m pytest ./wias-repo/tests/
