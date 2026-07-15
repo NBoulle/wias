@@ -365,11 +365,10 @@ class TestMakeTestBasis:
         self.time = np.linspace(0.0, 1.0, 5001)
         self.n = 10
         self.basis = make_test_basis(self.time, self.n)
-        spacing = (self.time[-1] - self.time[0]) / (self.n + 1)
-        self.hw = 2.0 * spacing
-        self.centers = np.linspace(self.time[0] + self.hw, self.time[-1] - self.hw, self.n)
+        self.T = self.time[-1] - self.time[0]
+        self.t_min = self.time[0]
 
-    def test_correct_number_of_windows(self):
+    def test_correct_number_of_basis_functions(self):
         assert len(self.basis) == self.n
 
     def test_arrays_have_correct_shape(self):
@@ -377,68 +376,47 @@ class TestMakeTestBasis:
             assert phi.shape == self.time.shape
             assert dphi.shape == self.time.shape
 
-    def test_phi_nonnegative(self):
-        """(1 - s²)² ≥ 0 everywhere."""
+    def test_phi_vanishes_at_endpoints(self):
+        """phi_k = sin(k*pi*(t - t_min)/T) vanishes at both endpoints."""
         for phi, _ in self.basis:
-            assert np.all(phi >= -1e-15)
+            assert phi[0] == pytest.approx(0.0, abs=1e-14)
+            assert phi[-1] == pytest.approx(0.0, abs=1e-14)
 
-    def test_phi_unity_at_center(self):
-        """phi(center) = (1 - 0²)² = 1."""
-        for (phi, _), center in zip(self.basis, self.centers):
-            idx = np.argmin(np.abs(self.time - center))
-            assert phi[idx] == pytest.approx(1.0, abs=1e-3)
+    def test_phi_formula(self):
+        """phi_k = sin(k*pi*(t - t_min) / T)."""
+        for k, (phi, _) in enumerate(self.basis, start=1):
+            omega = k * np.pi / self.T
+            expected = np.sin(omega * (self.time - self.t_min))
+            npt.assert_allclose(phi, expected, atol=1e-14)
 
-    def test_phi_zero_outside_support(self):
-        """phi = 0 strictly outside [center - hw, center + hw]."""
-        for (phi, _), center in zip(self.basis, self.centers):
-            outside = np.abs(self.time - center) >= self.hw
-            npt.assert_array_equal(phi[outside], 0.0)
+    def test_dphi_formula(self):
+        """dphi_k = k*pi/T * cos(k*pi*(t - t_min) / T)."""
+        for k, (_, dphi) in enumerate(self.basis, start=1):
+            omega = k * np.pi / self.T
+            expected = omega * np.cos(omega * (self.time - self.t_min))
+            npt.assert_allclose(dphi, expected, atol=1e-14)
 
-    def test_dphi_zero_at_center(self):
-        """dphi(center) ≈ 0 because dphi = -4s(1-s^2)/hw and s≈0 at the center."""
-        # Use a finer grid so the nearest point to each center is very close
+    def test_dphi_is_derivative_of_phi(self):
+        """dphi ≈ d/dt phi via finite differences (interior points)."""
         time_fine = np.linspace(0.0, 1.0, 100001)
-        basis_fine = make_test_basis(time_fine, self.n)
-        spacing = (time_fine[-1] - time_fine[0]) / (self.n + 1)
-        hw = 2.0 * spacing
-        centers = np.linspace(time_fine[0] + hw, time_fine[-1] - hw, self.n)
-        for (_, dphi), center in zip(basis_fine, centers):
-            idx = np.argmin(np.abs(time_fine - center))
-            assert dphi[idx] == pytest.approx(0.0, abs=1e-2)
+        basis_fine = make_test_basis(time_fine, 3)
+        for phi, dphi in basis_fine:
+            fd = np.gradient(phi, time_fine)
+            npt.assert_allclose(dphi[1:-1], fd[1:-1], atol=1e-5)
 
-    def test_dphi_formula_at_interior_point(self):
-        """Verify dphi = -4s(1-s²)/hw at an interior point s ≈ 0.5."""
-        # Use num_windows=3 so linspace gives a proper center at the middle window
-        time = np.linspace(0.0, 1.0, 100001)
-        hw = 0.1
-        basis = make_test_basis(time, 3, half_width=hw)
-        # Centers: linspace(0+0.1, 1-0.1, 3) = [0.1, 0.5, 0.9]
-        _, dphi = basis[1]    # middle window centered at 0.5
-        actual_center = np.linspace(0.0 + hw, 1.0 - hw, 3)[1]  # = 0.5
-        target = actual_center + 0.5 * hw   # s = 0.5
-        idx = np.argmin(np.abs(time - target))
-        s = (time[idx] - actual_center) / hw
-        expected = -4.0 * s * (1.0 - s**2) / hw
-        assert dphi[idx] == pytest.approx(expected, rel=1e-3)
+    def test_orthogonality_different_frequencies(self):
+        """Consecutive sinusoidal modes are L2-orthogonal on the interval."""
+        from scipy.integrate import simpson as simp
+        phi1, _ = self.basis[0]
+        phi2, _ = self.basis[1]
+        inner = simp(phi1 * phi2, x=self.time)
+        assert inner == pytest.approx(0.0, abs=1e-10)
 
-    def test_dphi_zero_outside_support(self):
-        """dphi = 0 outside compact support."""
-        for (_, dphi), center in zip(self.basis, self.centers):
-            outside = np.abs(self.time - center) >= self.hw
-            npt.assert_array_equal(dphi[outside], 0.0)
-
-    def test_custom_half_width_respected(self):
-        """Explicit half_width overrides the automatic spacing."""
-        basis = make_test_basis(self.time, 5, half_width=0.05)
-        assert len(basis) == 5
-        # Verify support width: half the second-window center distance
-        hw_used = 0.05
-        phi0, _ = basis[0]
-        # Support should vanish at ±hw_used from the center
-        # phi with custom hw=0.05 should be zero at indices farther than 0.05
-        centers_custom = np.linspace(self.time[0] + hw_used, self.time[-1] - hw_used, 5)
-        outside = np.abs(self.time - centers_custom[0]) >= hw_used
-        npt.assert_array_equal(phi0[outside], 0.0)
+    def test_varying_num_basis(self):
+        """make_test_basis returns the requested number of functions."""
+        for n in [1, 5, 20]:
+            basis = make_test_basis(self.time, n)
+            assert len(basis) == n
 
 
 # ===========================================================================
@@ -449,37 +427,36 @@ class TestWeakLibraryRows:
 
     def setup_method(self):
         self.time = np.linspace(0.0, 1.0, 8001)
-        self.basis = make_test_basis(self.time, num_windows=20)
+        self.basis = make_test_basis(self.time, 20)
 
     def test_output_shapes(self):
         states = np.sin(self.time)[:, None]
-        A, b, names = weak_library_rows(states, self.time, self.basis, _affine_library, 0)
+        A, b = weak_library_rows(states, self.time, self.basis, _affine_library, 0)
         assert A.shape == (20, 2)
         assert b.shape == (20,)
-        assert names == ["1", "x"]
 
     def test_ibp_linear_trajectory(self):
         """x(t) = t → dx/dt = 1 = 1·1 + 0·x.  A @ [1, 0] ≈ b via IBP."""
         states = self.time[:, None]
-        A, b, names = weak_library_rows(states, self.time, self.basis, _affine_library, 0)
+        A, b = weak_library_rows(states, self.time, self.basis, _affine_library, 0)
         npt.assert_allclose(A @ np.array([1.0, 0.0]), b, atol=1e-5)
 
     def test_ibp_exponential_trajectory(self):
         """x(t) = e^t → dx/dt = x = 1·x.  A @ [1] ≈ b via IBP."""
         x = np.exp(self.time)
         states = x[:, None]
-        A, b, _ = weak_library_rows(states, self.time, self.basis, _identity_library, 0)
+        A, b = weak_library_rows(states, self.time, self.basis, _identity_library, 0)
         npt.assert_allclose(A @ np.array([1.0]), b, atol=1e-4)
 
     def test_ibp_constant_trajectory_gives_zero_rhs(self):
-        """x(t) = 1 → dx/dt = 0 → b_j = -∫dphi_j dt ≈ 0 (compact support).
+        """x(t) = 1 → dx/dt = 0 → b_j = -∫dphi_j dt = -[phi_j]_boundary = 0.
 
-        Note: The integral of dphi over the compact support is analytically 0
-        (∫dphi dt = [phi]_boundary = 0), but Simpson's rule introduces a small
-        numerical quadrature error on the order of 1e-6.
+        The sinusoidal test functions vanish at both endpoints, so the boundary
+        term is exactly zero. Simpson's rule introduces a small numerical
+        quadrature error on the order of 1e-6.
         """
         states = np.ones((len(self.time), 1))
-        _, b, _ = weak_library_rows(states, self.time, self.basis, _constant_library, 0)
+        _, b = weak_library_rows(states, self.time, self.basis, _constant_library, 0)
         npt.assert_allclose(b, 0.0, atol=2e-5)
 
     def test_correct_component_index(self):
@@ -488,15 +465,15 @@ class TestWeakLibraryRows:
         x = self.time[:, None]
         y = np.exp(self.time)[:, None]
         states = np.hstack([x, y])
-        _, b_comp1, _ = weak_library_rows(states, self.time, self.basis, _identity_library, 1)
+        _, b_comp1 = weak_library_rows(states, self.time, self.basis, _identity_library, 1)
         # For y(t)=e^t with library [y]: b_j = -∫e^t dphi_j dt ≈ ∫e^t phi_j dt (IBP)
         states_exp = y
-        A_ref, b_ref, _ = weak_library_rows(states_exp, self.time, self.basis, _identity_library, 0)
+        A_ref, b_ref = weak_library_rows(states_exp, self.time, self.basis, _identity_library, 0)
         npt.assert_allclose(b_comp1, b_ref, atol=1e-10)
 
     def test_names_from_library(self):
         states = np.ones((len(self.time), 1))
-        _, _, names = weak_library_rows(states, self.time, self.basis, _affine_library, 0)
+        _, names = _affine_library(states)
         assert names == ["1", "x"]
 
 
@@ -508,35 +485,34 @@ class TestBuildWeakSystem:
 
     def setup_method(self):
         self.time = np.linspace(0.0, 1.0, 4001)
-        self.basis = make_test_basis(self.time, num_windows=10)
+        self.basis = make_test_basis(self.time, 10)
 
     def test_single_trajectory_equals_weak_library_rows(self):
         states = np.exp(self.time)[:, None]
-        A_ref, b_ref, _ = weak_library_rows(states, self.time, self.basis, _affine_library, 0)
-        A, b, _ = build_weak_system([states], self.time, self.basis, _affine_library, 0)
+        A_ref, b_ref = weak_library_rows(states, self.time, self.basis, _affine_library, 0)
+        A, b = build_weak_system([states], self.time, self.basis, _affine_library, 0)
         npt.assert_array_equal(A, A_ref)
         npt.assert_array_equal(b, b_ref)
 
     def test_two_trajectories_stack_rows(self):
         s1 = np.exp(self.time)[:, None]
         s2 = np.sin(self.time)[:, None]
-        A, b, names = build_weak_system([s1, s2], self.time, self.basis, _affine_library, 0)
+        A, b = build_weak_system([s1, s2], self.time, self.basis, _affine_library, 0)
         assert A.shape == (20, 2)    # 10 windows × 2 trajectories
         assert b.shape == (20,)
 
     def test_names_consistent_across_trajectories(self):
         s1 = np.exp(self.time)[:, None]
-        s2 = np.cos(self.time)[:, None]
-        _, _, names = build_weak_system([s1, s2], self.time, self.basis, _affine_library, 0)
+        _, names = _affine_library(s1)
         assert names == ["1", "x"]
 
     def test_row_order_first_trajectory_then_second(self):
         """First 10 rows come from trajectory 1; next 10 from trajectory 2."""
         s1 = np.exp(self.time)[:, None]
         s2 = np.sin(self.time)[:, None]
-        A_full, b_full, _ = build_weak_system([s1, s2], self.time, self.basis, _affine_library, 0)
-        A1, b1, _ = weak_library_rows(s1, self.time, self.basis, _affine_library, 0)
-        A2, b2, _ = weak_library_rows(s2, self.time, self.basis, _affine_library, 0)
+        A_full, b_full = build_weak_system([s1, s2], self.time, self.basis, _affine_library, 0)
+        A1, b1 = weak_library_rows(s1, self.time, self.basis, _affine_library, 0)
+        A2, b2 = weak_library_rows(s2, self.time, self.basis, _affine_library, 0)
         npt.assert_array_equal(A_full[:10], A1)
         npt.assert_array_equal(A_full[10:], A2)
         npt.assert_array_equal(b_full[:10], b1)
@@ -563,50 +539,54 @@ class TestWeakRowsSecondOrder:
 
     def setup_method(self):
         self.time = np.linspace(0.0, 2.0 * np.pi, 8001)
-        self.basis = make_test_basis(self.time, num_windows=15)
+        self.basis = make_test_basis(self.time, 15)
         u = np.cos(self.time)
         v = -np.sin(self.time)
         self.states = np.column_stack([u, v])
 
     def test_output_shapes(self):
-        A, b, names = weak_rows_second_order(
+        A, b = weak_rows_second_order(
             self.states, self.time, self.basis, _spring_library, _zero_forcing
         )
-        assert A.shape == (15, 3)   # 15 windows, 1 (u'') + 2 (u, u')
+        assert A.shape == (15, 3)   # 15 basis functions, 1 (u'') + 2 (u, u')
         assert b.shape == (15,)
 
-    def test_first_name_is_udd(self):
-        _, _, names = weak_rows_second_order(
+    def test_column_count_is_one_plus_library_size(self):
+        """A has 1 + len(library) columns (u'' column + library columns)."""
+        A, _ = weak_rows_second_order(
             self.states, self.time, self.basis, _spring_library, _zero_forcing
         )
-        assert names[0] == "u''"
+        _, lib_names = _spring_library(self.states)
+        assert A.shape[1] == 1 + len(lib_names)
 
-    def test_names_append_library_names(self):
-        _, _, names = weak_rows_second_order(
-            self.states, self.time, self.basis, _spring_library, _zero_forcing
-        )
-        assert names == ["u''", "u", "u'"]
+    def test_library_names_from_function(self):
+        """Library function returns expected term names."""
+        _, names = _spring_library(self.states)
+        assert names == ["u", "u'"]
 
     def test_zero_forcing_gives_zero_rhs(self):
-        _, b, _ = weak_rows_second_order(
+        _, b = weak_rows_second_order(
             self.states, self.time, self.basis, _spring_library, _zero_forcing
         )
         npt.assert_allclose(b, 0.0, atol=1e-12)
 
-    def test_unit_forcing_gives_positive_rhs(self):
-        """b_j = ∫1·phi_j dt > 0 since phi_j ≥ 0 and not identically zero."""
+    def test_forcing_rhs_matches_integral(self):
+        """b_j = \u222b f(t) * phi_j dt for each basis function."""
+        from scipy.integrate import simpson as simp
         u = np.zeros_like(self.time)
         v = np.zeros_like(self.time)
         states = np.column_stack([u, v])
-        _, b, _ = weak_rows_second_order(
+        _, b = weak_rows_second_order(
             states, self.time, self.basis, _trivial_library, _unit_forcing
         )
-        assert np.all(b > 0)
+        for j, (phi, _) in enumerate(self.basis):
+            expected = simp(phi, x=self.time)
+            assert b[j] == pytest.approx(expected, rel=1e-10, abs=1e-10)
 
     def test_udd_column_via_ibp(self):
         """First column = -∫v dphi dt (IBP representation of u'')."""
         from scipy.integrate import simpson
-        A, _, _ = weak_rows_second_order(
+        A, _ = weak_rows_second_order(
             self.states, self.time, self.basis, _trivial_library, _zero_forcing
         )
         v = self.states[:, 1]
@@ -617,7 +597,7 @@ class TestWeakRowsSecondOrder:
     def test_library_columns_via_integral(self):
         """Remaining columns = ∫library * phi dt."""
         from scipy.integrate import simpson
-        A, _, _ = weak_rows_second_order(
+        A, _ = weak_rows_second_order(
             self.states, self.time, self.basis, _spring_library, _zero_forcing
         )
         library, _ = _spring_library(self.states)
@@ -635,16 +615,16 @@ class TestBuildWeakSystemSecondOrder:
 
     def setup_method(self):
         self.time = np.linspace(0.0, 2.0 * np.pi, 4001)
-        self.basis = make_test_basis(self.time, num_windows=10)
+        self.basis = make_test_basis(self.time, 10)
         u = np.cos(self.time)
         v = -np.sin(self.time)
         self.states = np.column_stack([u, v])
 
     def test_single_trajectory_equals_weak_rows(self):
-        A_ref, b_ref, _ = weak_rows_second_order(
+        A_ref, b_ref = weak_rows_second_order(
             self.states, self.time, self.basis, _spring_library, _zero_forcing
         )
-        A, b, _ = build_weak_system_second_order(
+        A, b = build_weak_system_second_order(
             [self.states], self.time, self.basis, _spring_library, _zero_forcing
         )
         npt.assert_array_equal(A, A_ref)
@@ -654,7 +634,7 @@ class TestBuildWeakSystemSecondOrder:
         u2 = np.sin(self.time)
         v2 = np.cos(self.time)
         s2 = np.column_stack([u2, v2])
-        A, b, _ = build_weak_system_second_order(
+        A, b = build_weak_system_second_order(
             [self.states, s2], self.time, self.basis, _spring_library, _zero_forcing
         )
         assert A.shape[0] == 20
@@ -664,10 +644,10 @@ class TestBuildWeakSystemSecondOrder:
         u2 = np.sin(self.time)
         v2 = np.cos(self.time)
         s2 = np.column_stack([u2, v2])
-        A_full, b_full, _ = build_weak_system_second_order(
+        A_full, b_full = build_weak_system_second_order(
             [self.states, s2], self.time, self.basis, _spring_library, _zero_forcing
         )
-        A1, b1, _ = weak_rows_second_order(
+        A1, b1 = weak_rows_second_order(
             self.states, self.time, self.basis, _spring_library, _zero_forcing
         )
         npt.assert_array_equal(A_full[:10], A1)
@@ -685,8 +665,8 @@ class TestEndToEndSINDy:
         """x' = -x  →  coefficient = [-1]."""
         time = np.linspace(0.0, 3.0, 10001)
         states = np.exp(-time)[:, None]
-        basis = make_test_basis(time, num_windows=80)
-        A, b, _ = build_weak_system([states], time, basis, _identity_library, 0)
+        basis = make_test_basis(time, 80)
+        A, b = build_weak_system([states], time, basis, _identity_library, 0)
         coeffs = CPQR_solver(A, b)
         npt.assert_allclose(coeffs, [-1.0], atol=1e-4)
 
@@ -695,8 +675,8 @@ class TestEndToEndSINDy:
         time = np.linspace(0.0, 4.0, 12001)
         x0 = 5.0
         states = (2.0 + (x0 - 2.0) * np.exp(-time))[:, None]
-        basis = make_test_basis(time, num_windows=60)
-        A, b, _ = build_weak_system([states], time, basis, _affine_library, 0)
+        basis = make_test_basis(time, 60)
+        A, b = build_weak_system([states], time, basis, _affine_library, 0)
         coeffs = CPQR_solver(A, b)
         npt.assert_allclose(coeffs, [2.0, -1.0], atol=1e-3)
 
@@ -713,13 +693,13 @@ class TestEndToEndSINDy:
         u = np.cos(time)
         v = -np.sin(time)
         states = np.column_stack([u, v])
-        basis = make_test_basis(time, num_windows=120)
+        basis = make_test_basis(time, 120)
 
         def _u_only_library(s):
             return s[:, :1], ["u"]
 
         # A columns: [u''-IBP, u-integral]; b ≈ 0 (no forcing)
-        A, _, _ = weak_rows_second_order(
+        A, _ = weak_rows_second_order(
             states, time, basis, _u_only_library, _zero_forcing
         )
         # True relation: 1·u'' + 1·u = 0 → A @ [1, 1] ≈ 0
@@ -734,7 +714,7 @@ class TestEndToEndSINDy:
         time = np.linspace(0.0, 3.0, 6001)
         s1 = np.exp(-time)[:, None]
         s2 = (3.0 * np.exp(-time))[:, None]
-        basis = make_test_basis(time, num_windows=40)
-        A, b, _ = build_weak_system([s1, s2], time, basis, _identity_library, 0)
+        basis = make_test_basis(time, 40)
+        A, b = build_weak_system([s1, s2], time, basis, _identity_library, 0)
         coeffs = CPQR_solver(A, b)
         npt.assert_allclose(coeffs, [-1.0], atol=1e-4)

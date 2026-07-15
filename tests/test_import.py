@@ -18,8 +18,8 @@ def test_import_and_simple_dictionary_fit():
     x = 1.0 + np.exp(2.0 * time)
     states = x[:, None]
 
-    test_basis = wias.make_test_basis(time, num_windows=25)
-    A, b, names = wias.build_weak_system(
+    test_basis = wias.make_test_basis(time, num_basis=25)
+    A, b = wias.build_weak_system(
         trajectories=[states],
         time=time,
         test_basis=test_basis,
