@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wias"
+version = "0.1.0"
+description = "Weak Identification of Analytic Systems"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Nicolas Boulle, Diana Halikias, Samuel E. Otto, Alex Townsend" },
+]
+dependencies = ["numpy", "scipy"]
+
+[project.optional-dependencies]
+plot = ["matplotlib"]
+
+[tool.setuptools.packages.find]
+include = ["wias"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "."]
+python_files = ["test_*.py", "*_test.py"]
