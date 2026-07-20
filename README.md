@@ -1,3 +1,5 @@
+[![PyPI version](https://badge.fury.io/py/wias.svg)](https://pypi.org/project/wias/)
+
 # wias — Weak Identification of Analytic Systems
 
 `wias` is a Python library for data-driven identification of analytic systems in weak form based on the paper: [A zero-one law for one-shot system identification
