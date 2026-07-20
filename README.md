@@ -1,6 +1,7 @@
 # wias — Weak Identification of Analytic Systems
 
-`wias` is a Python library for data-driven identification of analytic systems in weak form.
+`wias` is a Python library for data-driven identification of analytic systems in weak form based on the paper: [A zero-one law for one-shot system identification
+](https://arxiv.org/abs/2607.15832) by Nicolas Boullé, Diana Halikias, Samuel E. Otto, and Alex Townsend.
 
 ## Features
 
@@ -53,7 +54,7 @@ If you use `wias` in your research, please cite the following paper:
 @article{boulle2026zero,
   title={A zero-one law for one-shot system identification},
   author={Boull\'e, Nicolas and Halikias, Diana and Otto, Samuel E. and Townsend, Alex},
-  journal={arXiv preprint arXiv:...},
+  journal={arXiv preprint arXiv:2607.15832},
   year={2026}
 }
 ```
