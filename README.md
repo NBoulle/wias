@@ -1,4 +1,4 @@
-[![PyPI version](https://badge.fury.io/py/wias.svg)](https://pypi.org/project/wias/)
+[![PyPI version](https://badge.fury.io/py/wias.svg)](https://pypi.org/project/wias/) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21454196.svg)](https://doi.org/10.5281/zenodo.21454196)
 
 # wias — Weak Identification of Analytic Systems
 
