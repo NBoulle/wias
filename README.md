@@ -37,6 +37,10 @@ Compute zero level set of a parameter-to-recovery map to identify inputs that li
 ## Installation
 
 ```bash
+pip install wias
+```
+or 
+```bash
 git clone https://github.com/NBoulle/wias
 cd wias
 pip install .
