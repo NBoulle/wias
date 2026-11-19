@@ -75,6 +75,7 @@ def CPQR_solver(A, b, rtol=1e-10):
         raise ValueError("A and b must have the same number of rows")
 
     A_reduced, independent_cols = remove_dependent_columns(A, rtol=rtol)
+    print("Condition number of reduced system:", np.linalg.cond(A_reduced))
     return solve_reduced_system(A_reduced, b, independent_cols, A.shape[1])
 
 

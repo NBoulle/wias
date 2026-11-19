@@ -217,3 +217,15 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 *.json
+*.csv
+examples/damped_harmonic_from_0_minus_2.png
+examples/damped_harmonic_condition_number.png
+examples/damped_harmonic_invariant_circle.png
+examples/duffing_final_time_quartiles.png
+examples/duffing_recovered_trajectory.png
+examples/duffing_T100_ensemble/duffing_T100_condition_and_error_bounds.png
+*.npz
+examples/lorenz_final_time_quartiles.png
+examples/lorenz_recovered_trajectory.png
+*.svg
+examples/lorenz_T40_ensemble/lorenz_T40_condition_and_error_bounds.png
